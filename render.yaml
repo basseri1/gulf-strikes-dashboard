@@ -2,6 +2,7 @@ services:
   - type: web
     name: gulf-strikes-dashboard
     runtime: python
+    pythonVersion: "3.12.0"
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
