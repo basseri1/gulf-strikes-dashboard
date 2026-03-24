@@ -262,8 +262,13 @@ def get_analytics() -> dict:
     cache = load_cache(ANALYTICS_CACHE)
     if cache and "last_updated" in cache:
         return cache
-    # No cache exists — do full fetch
-    return fetch_delta()
+    # No cache yet — return loading state (background thread is fetching)
+    return {
+        "last_updated": None,
+        "war_start": "2026-02-28",
+        "sources": [],
+        "loading": True,
+    }
 
 
 # --- Routes ---
@@ -291,7 +296,18 @@ scheduler.start()
 logger.info("Scheduler started — delta updates every hour on the hour.")
 
 
+def startup_fetch():
+    """Run initial fetch in background so the server starts immediately."""
+    import time
+    time.sleep(2)  # Let gunicorn bind the port first
+    fetch_delta()
+
+
+# Run initial fetch in background thread (doesn't block server startup)
+import threading
+threading.Thread(target=startup_fetch, daemon=True).start()
+
+
 if __name__ == "__main__":
     logger.info("Starting Gulf & Middle East Strikes Analytics Dashboard...")
-    fetch_delta()
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG, use_reloader=False)
