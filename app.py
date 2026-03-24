@@ -151,8 +151,9 @@ def fetch_delta():
         needs_full_refetch = False
         if not is_first_run and parse_mode == "count_posts":
             cached_tweets = raw_cache.get(username, {}).get("tweets", [])
-            if cached_tweets and not any(t.get("media_urls") for t in cached_tweets):
-                logger.info(f"@{username}: cached tweets missing media_urls, forcing full re-fetch...")
+            has_media = any(t.get("media_urls") and len(t["media_urls"]) > 0 for t in cached_tweets)
+            if cached_tweets and not has_media:
+                logger.info(f"@{username}: cached tweets have no media_urls, forcing full re-fetch...")
                 needs_full_refetch = True
 
         if is_first_run or needs_full_refetch:
@@ -215,7 +216,8 @@ def _analyze_cached_tweets(raw_cache: dict, analyze_images_for_new_only: bool = 
             p = parse_tweet(t, parse_mode)
 
             # For image-based sources (Bahrain), use Claude Vision
-            if parse_mode == "count_posts" and claude_client and t.get("media_urls"):
+            media_urls = t.get("media_urls", [])
+            if parse_mode == "count_posts" and claude_client and media_urls and len(media_urls) > 0:
                 tweet_id = str(t.get("id", ""))
                 if tweet_id in image_cache:
                     # Reuse cached image analysis
