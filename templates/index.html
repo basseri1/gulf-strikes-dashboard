@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gulf & Middle East Strikes — Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body dir="ltr">
+
+<!-- Header -->
+<header class="header">
+    <div class="header-inner">
+        <div class="header-title">
+            <h1>Gulf & Middle East Strikes Dashboard</h1>
+            <p class="header-sub">Strike & Interception Analytics from X/Twitter — Since Feb 28, 2026</p>
+            <div class="header-badge">
+                Sources: @BDF_Bahrain &bull; @modgovksa &bull; @KuwaitArmyGHQ &bull; @modgovae &bull; @TheStudyofWar (Israel) &bull; @TheStudyofWar (Iran)
+            </div>
+        </div>
+        <div class="header-controls">
+            <button id="lang-btn" class="lang-btn" onclick="toggleLang()">العربية</button>
+            <span id="last-updated" class="last-updated">
+                {% if data.last_updated %}Updated: {{ data.last_updated[:19] }}{% endif %}
+            </span>
+        </div>
+    </div>
+    <div class="countdown-bar">Next update in <span id="countdown">--:--</span></div>
+</header>
+
+{% if data.error %}
+<div class="error-banner">{{ data.error }}</div>
+{% endif %}
+
+<!-- Country Tabs -->
+<nav class="tabs-nav">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview', this)">Overview</button>
+    {% for source in data.sources %}
+    {% set tab_id = source.country | lower | replace(' ', '-') | replace('&', 'and') %}
+    <button class="tab-btn" data-tab="{{ tab_id }}" onclick="switchTab('{{ tab_id }}', this)">
+        {{ source.flag }} {{ source.country }}
+    </button>
+    {% endfor %}
+</nav>
+
+<!-- Overview Tab -->
+<main id="tab-overview" class="tab-content active">
+    <!-- Combined KPI Cards -->
+    <div class="kpi-grid" id="overviewKpis"></div>
+
+    <!-- Combined Charts Row -->
+    <div class="charts-row">
+        <div class="chart-card wide">
+            <h3>Daily Strikes Across All Sources</h3>
+            <div class="chart-wrap"><canvas id="overviewDailyChart"></canvas></div>
+        </div>
+    </div>
+    <div class="charts-row">
+        <div class="chart-card">
+            <h3>Strikes by Country</h3>
+            <div class="chart-wrap"><canvas id="overviewCountryChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+            <h3>Weapon Type Breakdown (All Sources)</h3>
+            <div class="chart-wrap"><canvas id="overviewWeaponChart"></canvas></div>
+        </div>
+    </div>
+    <div class="charts-row">
+        <div class="chart-card wide">
+            <h3>Cumulative Escalation Trend</h3>
+            <div class="chart-wrap"><canvas id="overviewTrendChart"></canvas></div>
+        </div>
+    </div>
+</main>
+
+<!-- Per-Country Tabs -->
+{% for source in data.sources %}
+{% set tab_id = source.country | lower | replace(' ', '-') | replace('&', 'and') %}
+<section id="tab-{{ tab_id }}" class="tab-content" style="--accent: {{ source.color }}">
+    <div class="source-header">
+        <span class="source-flag">{{ source.flag }}</span>
+        <div>
+            <h2>{{ source.country }}</h2>
+            <a href="https://x.com/{{ source.username }}" target="_blank" class="source-handle">@{{ source.username }}</a>
+            <span class="source-desc">{{ source.description }}</span>
+        </div>
+        {% if source.error %}<span class="source-error" title="{{ source.error }}">&#9888; {{ source.error }}</span>{% endif %}
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid" id="kpis-{{ tab_id }}"></div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+        <div class="chart-card wide">
+            <h3>Daily Strikes</h3>
+            <div class="chart-wrap"><canvas id="dailyChart-{{ tab_id }}"></canvas></div>
+        </div>
+    </div>
+    <div class="charts-row">
+        <div class="chart-card">
+            <h3>Target Locations</h3>
+            <div class="chart-wrap"><canvas id="locChart-{{ tab_id }}"></canvas></div>
+        </div>
+        <div class="chart-card">
+            <h3>Escalation Trend</h3>
+            <div class="chart-wrap"><canvas id="trendChart-{{ tab_id }}"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Daily Log Table -->
+    <div class="table-card">
+        <h3>Daily Log</h3>
+        <div class="table-scroll">
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Drones</th>
+                        <th>Missiles</th>
+                        <th>Locations</th>
+                    </tr>
+                </thead>
+                <tbody id="table-{{ tab_id }}"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endfor %}
+
+<footer class="footer">
+    Data sourced from X/Twitter API v2 | Auto-refreshes every hour | War start: February 28, 2026
+</footer>
+
+<script>
+// ========================
+// DATA FROM SERVER
+// ========================
+const DATA = {{ data | tojson }};
+
+// ========================
+// LANGUAGE TOGGLE
+// ========================
+const TRANSLATIONS = {
+    en: {
+        title: 'Gulf & Middle East Strikes Dashboard',
+        subtitle: 'Strike & Interception Analytics from X/Twitter — Since Feb 28, 2026',
+        nextUpdate: 'Next update in',
+        overview: 'Overview',
+        totalDrones: 'Total Drones',
+        totalMissiles: 'Total Missiles',
+        totalLaunched: 'Total Launched',
+        activeDays: 'Active Days',
+        acrossAll: 'Across all sources',
+        dronesMissiles: 'Drones + Missiles',
+        sinceFeb: 'Since Feb 28, 2026',
+        dailyStrikes: 'Daily Strikes Across All Sources',
+        strikesByCountry: 'Strikes by Country',
+        weaponBreakdown: 'Weapon Type Breakdown (All Sources)',
+        escalationTrend: 'Cumulative Escalation Trend',
+        dailyStrikesTab: 'Daily Strikes',
+        targetLocations: 'Target Locations',
+        escalation: 'Escalation Trend',
+        dailyLog: 'Daily Log',
+        date: 'Date',
+        drones: 'Drones',
+        missiles: 'Missiles',
+        locations: 'Locations',
+        intercepted: 'Intercepted / reported',
+        peakDrones: 'Peak Drones/Day',
+        langBtn: 'العربية',
+        cumDrones: 'Cumulative Drones',
+        cumMissiles: 'Cumulative Missiles',
+    },
+    ar: {
+        title: 'لوحة تحليل الضربات — الخليج والشرق الأوسط',
+        subtitle: 'تحليلات الضربات والاعتراضات من منصة إكس — منذ 28 فبراير 2026',
+        nextUpdate: 'التحديث القادم خلال',
+        overview: 'نظرة عامة',
+        totalDrones: 'إجمالي المسيّرات',
+        totalMissiles: 'إجمالي الصواريخ',
+        totalLaunched: 'إجمالي المُطلَق',
+        activeDays: 'أيام النشاط',
+        acrossAll: 'من جميع المصادر',
+        dronesMissiles: 'مسيّرات + صواريخ',
+        sinceFeb: 'منذ 28 فبراير 2026',
+        dailyStrikes: 'الضربات اليومية من جميع المصادر',
+        strikesByCountry: 'الضربات حسب الدولة',
+        weaponBreakdown: 'توزيع أنواع الأسلحة (جميع المصادر)',
+        escalationTrend: 'اتجاه التصعيد التراكمي',
+        dailyStrikesTab: 'الضربات اليومية',
+        targetLocations: 'مواقع الأهداف',
+        escalation: 'اتجاه التصعيد',
+        dailyLog: 'السجل اليومي',
+        date: 'التاريخ',
+        drones: 'مسيّرات',
+        missiles: 'صواريخ',
+        locations: 'المواقع',
+        intercepted: 'تم اعتراضها / مُبلَّغ عنها',
+        peakDrones: 'أعلى مسيّرات/يوم',
+        langBtn: 'English',
+        cumDrones: 'المسيّرات التراكمية',
+        cumMissiles: 'الصواريخ التراكمية',
+    }
+};
+
+const COUNTRY_AR = {
+    'Bahrain': 'البحرين',
+    'Saudi Arabia': 'السعودية',
+    'Kuwait': 'الكويت',
+    'UAE': 'الإمارات',
+    'Israel': 'إسرائيل',
+    'Iran': 'إيران',
+};
+
+let currentLang = 'en';
+
+function toggleLang() {
+    currentLang = currentLang === 'en' ? 'ar' : 'en';
+    document.getElementById('lang-btn').textContent = currentLang === 'en' ? 'العربية' : 'English';
+    applyLanguage();
+}
+
+function applyLanguage() {
+    const t = TRANSLATIONS[currentLang];
+    const isAr = currentLang === 'ar';
+
+    // Set page direction
+    document.documentElement.lang = currentLang;
+    document.body.dir = isAr ? 'rtl' : 'ltr';
+
+    // Header
+    const h1 = document.querySelector('.header h1');
+    const sub = document.querySelector('.header-sub');
+    if (h1) h1.textContent = t.title;
+    if (sub) sub.textContent = t.subtitle;
+
+    // Countdown
+    const countdownBar = document.querySelector('.countdown-bar');
+    const countdownEl = document.getElementById('countdown');
+    if (countdownBar && countdownEl) {
+        const countdownSpan = countdownEl.textContent;
+        countdownBar.innerHTML = t.nextUpdate + ' <span id="countdown">' + countdownSpan + '</span>';
+    }
+
+    // Overview tab button
+    document.querySelector('[data-tab="overview"]').textContent = t.overview;
+
+    // Country tab buttons
+    (DATA.sources || []).forEach(s => {
+        const tabId = s.country.toLowerCase().replace(/\s+/g, '-').replace(/&/g, 'and');
+        const btn = document.querySelector('[data-tab="' + tabId + '"]');
+        if (btn) btn.textContent = s.flag + ' ' + (isAr ? (COUNTRY_AR[s.country] || s.country) : s.country);
+    });
+
+    // All KPI labels — store original key as data attribute for reliable matching
+    document.querySelectorAll('.kpi-label').forEach(el => {
+        if (!el.dataset.key) {
+            const text = el.textContent.trim().toLowerCase();
+            if (text.includes('drone') || text.includes('مسيّرات')) el.dataset.key = 'totalDrones';
+            else if (text.includes('missile') || text.includes('صواريخ')) el.dataset.key = 'totalMissiles';
+            else if (text.includes('launched') || text.includes('المُطلَق')) el.dataset.key = 'totalLaunched';
+            else if (text.includes('active') || text.includes('النشاط')) el.dataset.key = 'activeDays';
+            else if (text.includes('peak') || text.includes('أعلى')) el.dataset.key = 'peakDrones';
+        }
+        const key = el.dataset.key;
+        if (key && t[key]) el.textContent = t[key];
+    });
+
+    // All KPI details
+    document.querySelectorAll('.kpi-detail').forEach(el => {
+        if (!el.dataset.key) {
+            const text = el.textContent.trim().toLowerCase();
+            if (text.includes('across') || text.includes('المصادر')) el.dataset.key = 'acrossAll';
+            else if (text.includes('drones +') || text.includes('مسيّرات +')) el.dataset.key = 'dronesMissiles';
+            else if (text.includes('since feb') || text.includes('فبراير')) el.dataset.key = 'sinceFeb';
+            else if (text.includes('intercepted') || text.includes('اعتراض')) el.dataset.key = 'intercepted';
+        }
+        const key = el.dataset.key;
+        if (key && t[key]) el.textContent = t[key];
+    });
+
+    // Chart titles
+    document.querySelectorAll('.chart-card h3').forEach(el => {
+        const text = el.textContent.trim();
+        if (text.includes('Daily Strikes Across') || text.includes('الضربات اليومية من')) el.textContent = t.dailyStrikes;
+        if (text.includes('Strikes by Country') || text.includes('الضربات حسب')) el.textContent = t.strikesByCountry;
+        if (text.includes('Weapon Type') || text.includes('توزيع أنواع')) el.textContent = t.weaponBreakdown;
+        if (text === 'Cumulative Escalation Trend' || text === 'اتجاه التصعيد التراكمي') el.textContent = t.escalationTrend;
+        if (text === 'Daily Strikes' || text === 'الضربات اليومية') el.textContent = t.dailyStrikesTab;
+        if (text === 'Target Locations' || text === 'مواقع الأهداف') el.textContent = t.targetLocations;
+        if (text === 'Escalation Trend' || text === 'اتجاه التصعيد') el.textContent = t.escalation;
+    });
+
+    // Table titles
+    document.querySelectorAll('.table-card h3').forEach(el => {
+        el.textContent = t.dailyLog;
+    });
+
+    // Table headers
+    document.querySelectorAll('.log-table th').forEach(el => {
+        const text = el.textContent.trim();
+        if (text === 'Date' || text === 'التاريخ') el.textContent = t.date;
+        if (text === 'Drones' || text === 'مسيّرات') el.textContent = t.drones;
+        if (text === 'Missiles' || text === 'صواريخ') el.textContent = t.missiles;
+        if (text === 'Locations' || text === 'المواقع') el.textContent = t.locations;
+    });
+
+    // Country headers in per-country tabs
+    document.querySelectorAll('.source-header h2').forEach(el => {
+        const country = el.textContent.trim();
+        if (isAr && COUNTRY_AR[country]) el.textContent = COUNTRY_AR[country];
+        // Reverse lookup for switching back to English
+        if (!isAr) {
+            for (const [en, ar] of Object.entries(COUNTRY_AR)) {
+                if (country === ar) { el.textContent = en; break; }
+            }
+        }
+    });
+}
+
+// ========================
+// CHART DEFAULTS
+// ========================
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1e293b';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+const COLORS = {
+    blue: 'rgba(59,130,246,0.7)',
+    red: 'rgba(239,68,68,0.7)',
+    green: 'rgba(16,185,129,0.7)',
+    orange: 'rgba(245,158,11,0.7)',
+    purple: 'rgba(139,92,246,0.7)',
+    pink: 'rgba(236,72,153,0.7)',
+    cyan: 'rgba(6,182,212,0.7)',
+    teal: 'rgba(20,184,166,0.7)',
+};
+const PALETTE = [COLORS.blue, COLORS.orange, COLORS.red, COLORS.purple, COLORS.pink, COLORS.cyan, COLORS.green, COLORS.teal];
+
+const tooltipStyle = {
+    backgroundColor: '#1e293b',
+    titleColor: '#f1f5f9',
+    bodyColor: '#94a3b8',
+    borderColor: '#334155',
+    borderWidth: 1,
+    padding: 12,
+    cornerRadius: 8,
+};
+
+// ========================
+// TAB SWITCHING
+// ========================
+function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    btn.classList.add('active');
+}
+
+// ========================
+// KPI CARD BUILDER
+// ========================
+function renderKpis(containerId, kpis) {
+    const grid = document.getElementById(containerId);
+    if (!grid) return;
+    grid.innerHTML = kpis.map(k => `
+        <div class="kpi-card ${k.cls || ''}">
+            <div class="kpi-label">${k.label}</div>
+            <div class="kpi-value">${k.value}</div>
+            <div class="kpi-detail">${k.detail}</div>
+        </div>
+    `).join('');
+}
+
+// ========================
+// OVERVIEW TAB
+// ========================
+function buildOverview() {
+    const sources = DATA.sources || [];
+    let totalDrones = 0, totalMissiles = 0, totalPosts = 0, allDays = new Set();
+
+    sources.forEach(s => {
+        const sm = s.summary || {};
+        totalDrones += sm.total_drones || 0;
+        totalMissiles += sm.total_missiles || 0;
+        totalPosts += sm.total_posts || 0;
+        (s.daily_data || []).forEach(d => allDays.add(d.date));
+    });
+
+    const totalLaunched = totalDrones + totalMissiles;
+
+    renderKpis('overviewKpis', [
+        { label: 'Total Drones', value: totalDrones.toLocaleString(), detail: 'Across all sources', cls: 'blue' },
+        { label: 'Total Missiles', value: totalMissiles.toLocaleString(), detail: 'Across all sources', cls: 'red' },
+        { label: 'Total Launched', value: totalLaunched.toLocaleString(), detail: 'Drones + Missiles', cls: 'orange' },
+        { label: 'Active Days', value: allDays.size, detail: 'Since Feb 28, 2026', cls: 'green' },
+    ]);
+
+    // Combined daily chart — strikes per day per source
+    const allDates = [...allDays].sort();
+    const datasets = sources.map((s, i) => {
+        const dateMap = {};
+        (s.daily_data || []).forEach(d => { dateMap[d.date] = (d.drones || 0) + (d.missiles || 0); });
+        return {
+            label: s.country,
+            data: allDates.map(dt => dateMap[dt] || 0),
+            backgroundColor: PALETTE[i % PALETTE.length],
+            borderRadius: 3,
+        };
+    });
+
+    new Chart(document.getElementById('overviewDailyChart'), {
+        type: 'bar',
+        data: { labels: allDates.map(d => d.slice(5)), datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { padding: 12, usePointStyle: true } }, tooltip: tooltipStyle },
+            scales: {
+                x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+                y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
+            }
+        }
+    });
+
+    // Strikes by country doughnut
+    new Chart(document.getElementById('overviewCountryChart'), {
+        type: 'doughnut',
+        data: {
+            labels: sources.map(s => s.country),
+            datasets: [{ data: sources.map(s => (s.summary?.total_drones || 0) + (s.summary?.total_missiles || 0)), backgroundColor: PALETTE, borderWidth: 0, hoverOffset: 8 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { padding: 12, usePointStyle: true, pointStyle: 'circle' } } }
+        }
+    });
+
+    // Weapon type doughnut
+    new Chart(document.getElementById('overviewWeaponChart'), {
+        type: 'doughnut',
+        data: {
+            labels: sources.map(s => s.country + ' Drones').concat(sources.map(s => s.country + ' Missiles')),
+            datasets: [{
+                data: sources.map(s => s.summary?.total_drones || 0).concat(sources.map(s => s.summary?.total_missiles || 0)),
+                backgroundColor: sources.map((_, i) => PALETTE[i]).concat(sources.map((_, i) => PALETTE[i].replace('0.7', '0.35'))),
+                borderWidth: 0, hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { padding: 8, usePointStyle: true, pointStyle: 'circle', font: { size: 10 } } } }
+        }
+    });
+
+    // Cumulative trend
+    const cumDatasets = sources.map((s, i) => {
+        const dateMap = {};
+        (s.daily_data || []).forEach(d => { dateMap[d.date] = (d.drones || 0) + (d.missiles || 0); });
+        let cum = 0;
+        const cumData = allDates.map(dt => { cum += (dateMap[dt] || 0); return cum; });
+        const color = PALETTE[i % PALETTE.length];
+        return {
+            label: s.country,
+            data: cumData,
+            borderColor: color.replace('0.7', '1'),
+            backgroundColor: color.replace('0.7', '0.1'),
+            fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5,
+        };
+    });
+
+    new Chart(document.getElementById('overviewTrendChart'), {
+        type: 'line',
+        data: { labels: allDates.map(d => d.slice(5)), datasets: cumDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { padding: 12, usePointStyle: true } }, tooltip: tooltipStyle },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
+            }
+        }
+    });
+}
+
+// ========================
+// PER-COUNTRY TABS
+// ========================
+function slugify(country) {
+    return country.toLowerCase().replace(/\s+/g, '-').replace(/&/g, 'and');
+}
+
+function buildCountryTab(source) {
+    const sm = source.summary || {};
+    const daily = source.daily_data || [];
+    const id = slugify(source.country);
+    const mode = source.parse_mode || 'arabic_per_incident';
+
+    // KPIs — uniform for all countries
+    renderKpis('kpis-' + id, [
+        { label: 'Total Drones', value: (sm.total_drones || 0).toLocaleString(), detail: 'Intercepted / reported', cls: 'blue' },
+        { label: 'Total Missiles', value: (sm.total_missiles || 0).toLocaleString(), detail: 'Intercepted / reported', cls: 'red' },
+        { label: 'Total Launched', value: (sm.total_launched || 0).toLocaleString(), detail: 'Drones + Missiles', cls: 'orange' },
+        { label: 'Peak Drones/Day', value: sm.peak_drones_day || 0, detail: sm.peak_day || '—', cls: 'purple' },
+        { label: 'Active Days', value: sm.active_days || 0, detail: sm.date_range || '—', cls: 'green' },
+    ]);
+
+    const dates = daily.map(d => d.date.slice(5));
+    const drones = daily.map(d => d.drones || 0);
+    const missiles = daily.map(d => d.missiles || 0);
+
+    // Daily bar chart — uniform
+    const datasets = [
+        { label: 'Drones', data: drones, backgroundColor: COLORS.blue, borderRadius: 3 },
+        { label: 'Missiles', data: missiles, backgroundColor: COLORS.red, borderRadius: 3 },
+    ];
+
+    new Chart(document.getElementById('dailyChart-' + id), {
+        type: 'bar',
+        data: { labels: dates, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { padding: 12, usePointStyle: true } }, tooltip: tooltipStyle },
+            scales: {
+                x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+                y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
+            }
+        }
+    });
+
+    // Location doughnut
+    const locFreq = sm.location_frequency || {};
+    const locEntries = Object.entries(locFreq).sort((a, b) => b[1] - a[1]);
+    if (locEntries.length > 0) {
+        new Chart(document.getElementById('locChart-' + id), {
+            type: 'doughnut',
+            data: {
+                labels: locEntries.map(l => l[0]),
+                datasets: [{ data: locEntries.map(l => l[1]), backgroundColor: PALETTE, borderWidth: 0, hoverOffset: 8 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'right', labels: { padding: 10, usePointStyle: true, pointStyle: 'circle', font: { size: 11 } } } }
+            }
+        });
+    }
+
+    // Cumulative trend line — uniform
+    let cumD = 0, cumM = 0;
+    new Chart(document.getElementById('trendChart-' + id), {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [
+                {
+                    label: 'Cumulative Drones', data: drones.map(d => cumD += d),
+                    borderColor: 'rgba(59,130,246,1)', backgroundColor: 'rgba(59,130,246,0.1)',
+                    fill: true, tension: 0.3, pointRadius: 2
+                },
+                {
+                    label: 'Cumulative Missiles', data: missiles.map(m => cumM += m),
+                    borderColor: 'rgba(239,68,68,1)', backgroundColor: 'rgba(239,68,68,0.1)',
+                    fill: true, tension: 0.3, pointRadius: 2, yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', labels: { padding: 12, usePointStyle: true } }, tooltip: tooltipStyle },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Drones' } },
+                y1: { beginAtZero: true, position: 'right', grid: { display: false }, title: { display: true, text: 'Missiles' } }
+            }
+        }
+    });
+
+    // Table — uniform for all countries
+    const tbody = document.getElementById('table-' + id);
+    if (!tbody) return;
+    const maxD = Math.max(...drones, 1);
+    daily.forEach(d => {
+        const barW = d.drones > 0 ? Math.round((d.drones / maxD) * 100) : 0;
+        const locTags = (d.locations || []).map(l => `<span class="tag">${l}</span>`).join('');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="date-cell">${d.date}</td>
+            <td>${d.drones > 0 ? '<span class="bar drone-bar" style="width:' + barW + 'px"></span>' + d.drones : '<span class="muted">—</span>'}</td>
+            <td>${d.missiles > 0 ? '<span class="missile-dot"></span>' + d.missiles : '<span class="muted">—</span>'}</td>
+            <td>${locTags || '<span class="muted">—</span>'}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// ========================
+// INIT
+// ========================
+buildOverview();
+(DATA.sources || []).forEach(buildCountryTab);
+
+// ========================
+// AUTO-REFRESH — reload page on the hour
+// ========================
+function updateCountdown() {
+    const now = new Date();
+    const nextHour = new Date(now);
+    nextHour.setMinutes(0, 0, 0);
+    nextHour.setHours(nextHour.getHours() + 1);
+    const secsLeft = Math.floor((nextHour - now) / 1000);
+
+    if (secsLeft <= 0) { location.reload(); return; }
+    const m = Math.floor(secsLeft / 60), s = secsLeft % 60;
+    document.getElementById('countdown').textContent = m.toString().padStart(2,'0') + ':' + s.toString().padStart(2,'0');
+}
+updateCountdown();
+setInterval(updateCountdown, 1000);
+</script>
+
+</body>
+</html>
