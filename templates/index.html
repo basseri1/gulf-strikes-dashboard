@@ -357,6 +357,8 @@ function switchTab(tab, btn) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     btn.classList.add('active');
+    // Trigger Chart.js resize for charts in newly visible tab
+    setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 50);
 }
 
 // ========================
