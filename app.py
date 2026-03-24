@@ -147,13 +147,13 @@ def fetch_delta():
         if username in fetched_usernames:
             continue
 
-        # Check if cached tweets need re-fetch (missing media_urls for image-based sources)
+        # For image-based sources (count_posts), check if we have image analysis results
+        # If not, force a full re-fetch to get tweets with media_urls
         needs_full_refetch = False
         if not is_first_run and parse_mode == "count_posts":
-            cached_tweets = raw_cache.get(username, {}).get("tweets", [])
-            has_media = any(t.get("media_urls") and len(t["media_urls"]) > 0 for t in cached_tweets)
-            if cached_tweets and not has_media:
-                logger.info(f"@{username}: cached tweets have no media_urls, forcing full re-fetch...")
+            img_cache = load_cache(CACHE_DIR / "image_results.json")
+            if not img_cache:
+                logger.info(f"@{username}: no image analysis cache found, forcing full re-fetch...")
                 needs_full_refetch = True
 
         if is_first_run or needs_full_refetch:
