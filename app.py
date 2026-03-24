@@ -147,7 +147,15 @@ def fetch_delta():
         if username in fetched_usernames:
             continue
 
-        if is_first_run:
+        # Check if cached tweets need re-fetch (missing media_urls for image-based sources)
+        needs_full_refetch = False
+        if not is_first_run and parse_mode == "count_posts":
+            cached_tweets = raw_cache.get(username, {}).get("tweets", [])
+            if cached_tweets and not any(t.get("media_urls") for t in cached_tweets):
+                logger.info(f"@{username}: cached tweets missing media_urls, forcing full re-fetch...")
+                needs_full_refetch = True
+
+        if is_first_run or needs_full_refetch:
             # Full historical fetch
             logger.info(f"Fetching full history from @{username}...")
             raw_data = twitter.fetch_historical_tweets(username, max_tweets=config.MAX_HISTORICAL_TWEETS)
