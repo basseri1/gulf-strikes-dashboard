@@ -25,9 +25,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-ANALYTICS_CACHE = Path(__file__).parent / "cache" / "analytics.json"
-RAW_TWEETS_CACHE = Path(__file__).parent / "cache" / "raw_tweets.json"
-ANALYTICS_CACHE.parent.mkdir(exist_ok=True)
+# Use persistent disk on Render (/var/data), fall back to local cache/
+CACHE_DIR = Path("/var/data") if Path("/var/data").exists() else Path(__file__).parent / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
+
+ANALYTICS_CACHE = CACHE_DIR / "analytics.json"
+RAW_TWEETS_CACHE = CACHE_DIR / "raw_tweets.json"
 
 bearer_token = os.getenv("TWITTER_BEARER_TOKEN", "")
 twitter = TwitterClient(bearer_token) if bearer_token and bearer_token != "your_bearer_token_here" else None
@@ -184,7 +187,7 @@ def _analyze_cached_tweets(raw_cache: dict, analyze_images_for_new_only: bool = 
     """Parse and analyze all cached tweets, produce analytics."""
     all_sources = []
     # Cache for already-analyzed image results
-    image_cache_path = Path(__file__).parent / "cache" / "image_results.json"
+    image_cache_path = CACHE_DIR / "image_results.json"
     image_cache = load_cache(image_cache_path)
 
     for account in config.ACCOUNTS:
