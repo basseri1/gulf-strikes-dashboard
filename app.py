@@ -219,13 +219,15 @@ def _analyze_cached_tweets(raw_cache: dict, analyze_images_for_new_only: bool = 
             media_urls = t.get("media_urls", [])
             if parse_mode == "count_posts" and claude_client and media_urls and len(media_urls) > 0:
                 tweet_id = str(t.get("id", ""))
-                if tweet_id in image_cache:
-                    # Reuse cached image analysis
+                if tweet_id in image_cache and (image_cache[tweet_id].get("drones", 0) > 0 or image_cache[tweet_id].get("missiles", 0) > 0):
+                    # Reuse cached image analysis (only if it has real data)
                     img_data = image_cache[tweet_id]
                 else:
-                    # Analyze new image
+                    # Analyze image (or retry if previous result was 0)
                     img_data = extract_from_tweet_images(claude_client, t)
-                    image_cache[tweet_id] = img_data
+                    # Only cache non-zero results to allow retries on failures
+                    if img_data.get("drones", 0) > 0 or img_data.get("missiles", 0) > 0:
+                        image_cache[tweet_id] = img_data
 
                 p["drones"] = img_data.get("drones", 0)
                 p["missiles"] = img_data.get("missiles", 0)
