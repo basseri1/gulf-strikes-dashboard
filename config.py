@@ -66,6 +66,7 @@ MAX_HISTORICAL_TWEETS = 300
 REFRESH_INTERVAL = 3600
 
 # Flask server settings
+import os
 HOST = "0.0.0.0"
-PORT = 5000
-DEBUG = True
+PORT = int(os.getenv("PORT", 5000))
+DEBUG = os.getenv("FLASK_ENV", "development") == "development"
